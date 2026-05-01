@@ -4,6 +4,8 @@
 #include "Component/StaticMeshComponent.h"
 #include "Engine/Component/CameraComponent.h"
 #include "Render/Types/LODContext.h"
+#include "Physics/NativePhysicsScene.h"
+#include "Physics/PhysXPhysicsScene.h"
 #include <algorithm>
 #include "Profiling/Stats.h"
 
@@ -224,6 +226,10 @@ void UWorld::InitWorld()
 	PersistentLevel->SetWorld(this);
 
 	CameraManager = UObjectManager::Get().CreateObject<UCameraManager>(this);
+
+	// 물리 시스템 초기화 — PhysX 4.1 백엔드
+	PhysicsScene = std::make_unique<FPhysXPhysicsScene>();
+	PhysicsScene->Initialize(this);
 }
 
 void UWorld::BeginPlay()
@@ -251,10 +257,10 @@ void UWorld::Tick(float DeltaTime, ELevelTick TickType)
 
 	Scene.GetDebugDrawQueue().Tick(DeltaTime);
 
-	if (bHasBegunPlay)
+	if (bHasBegunPlay && PhysicsScene)
 	{
-		SCOPE_STAT_CAT("CollisionSystem", "1_WorldTick");
-		CollisionSystem.Tick(this, DeltaTime);
+		SCOPE_STAT_CAT("PhysicsScene", "1_WorldTick");
+		PhysicsScene->Tick(DeltaTime);
 	}
 
 	TickManager.Tick(this, DeltaTime, TickType);
@@ -271,6 +277,12 @@ void UWorld::EndPlay()
 	}
 
 	PersistentLevel->EndPlay();
+
+	// 물리 시스템 정리 — 액터/컴포넌트가 아직 살아있는 동안 해제
+	if (PhysicsScene)
+	{
+		PhysicsScene->Shutdown();
+	}
 
 	// Clear spatial partition while actors/components are still alive.
 	// Otherwise Octree teardown can dereference stale primitive pointers during shutdown.
